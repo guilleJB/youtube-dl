@@ -4,16 +4,15 @@ import errno
 import os
 import socket
 import time
+import re
 
 from .common import FileDownloader
-from ..compat import (
-    compat_urllib_request,
-    compat_urllib_error,
-)
+from ..compat import compat_urllib_error
 from ..utils import (
     ContentTooShortError,
     encodeFilename,
     sanitize_open,
+    sanitized_Request,
 )
 
 
@@ -28,8 +27,8 @@ class HttpFD(FileDownloader):
         add_headers = info_dict.get('http_headers')
         if add_headers:
             headers.update(add_headers)
-        basic_request = compat_urllib_request.Request(url, None, headers)
-        request = compat_urllib_request.Request(url, None, headers)
+        basic_request = sanitized_Request(url, None, headers)
+        request = sanitized_Request(url, None, headers)
 
         is_test = self.params.get('test', False)
 
@@ -57,6 +56,24 @@ class HttpFD(FileDownloader):
             # Establish connection
             try:
                 data = self.ydl.urlopen(request)
+                # When trying to resume, Content-Range HTTP header of response has to be checked
+                # to match the value of requested Range HTTP header. This is due to a webservers
+                # that don't support resuming and serve a whole file with no Content-Range
+                # set in response despite of requested Range (see
+                # https://github.com/rg3/youtube-dl/issues/6057#issuecomment-126129799)
+                if resume_len > 0:
+                    content_range = data.headers.get('Content-Range')
+                    if content_range:
+                        content_range_m = re.search(r'bytes (\d+)-', content_range)
+                        # Content-Range is present and matches requested Range, resume is possible
+                        if content_range_m and resume_len == int(content_range_m.group(1)):
+                            break
+                    # Content-Range is either not present or invalid. Assuming remote webserver is
+                    # trying to send the whole file, resume is not possible, so wiping the local file
+                    # and performing entire redownload
+                    self.report_unable_to_resume()
+                    resume_len = 0
+                    open_mode = 'wb'
                 break
             except (compat_urllib_error.HTTPError, ) as err:
                 if (err.code < 500 or err.code >= 600) and err.code != 416:
@@ -123,8 +140,8 @@ class HttpFD(FileDownloader):
 
         if data_len is not None:
             data_len = int(data_len) + resume_len
-            min_data_len = self.params.get("min_filesize", None)
-            max_data_len = self.params.get("max_filesize", None)
+            min_data_len = self.params.get('min_filesize')
+            max_data_len = self.params.get('max_filesize')
             if min_data_len is not None and data_len < min_data_len:
                 self.to_screen('\r[download] File is smaller than min-filesize (%s bytes < %s bytes). Aborting.' % (data_len, min_data_len))
                 return False

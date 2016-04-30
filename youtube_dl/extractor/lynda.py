@@ -4,20 +4,18 @@ import re
 import json
 
 from .common import InfoExtractor
-from ..compat import (
-    compat_str,
-    compat_urllib_parse,
-    compat_urllib_request,
-)
+from ..compat import compat_str
 from ..utils import (
     ExtractorError,
+    clean_html,
     int_or_none,
+    sanitized_Request,
+    urlencode_postdata,
 )
 
 
 class LyndaBaseIE(InfoExtractor):
     _LOGIN_URL = 'https://www.lynda.com/login/login.aspx'
-    _SUCCESSFUL_LOGIN_REGEX = r'isLoggedIn: true'
     _ACCOUNT_CREDENTIALS_HINT = 'Use --username and --password options to provide lynda.com account credentials.'
     _NETRC_MACHINE = 'lynda'
 
@@ -25,7 +23,7 @@ class LyndaBaseIE(InfoExtractor):
         self._login()
 
     def _login(self):
-        (username, password) = self._get_login_info()
+        username, password = self._get_login_info()
         if username is None:
             return
 
@@ -35,13 +33,13 @@ class LyndaBaseIE(InfoExtractor):
             'remember': 'false',
             'stayPut': 'false'
         }
-        request = compat_urllib_request.Request(
-            self._LOGIN_URL, compat_urllib_parse.urlencode(login_form))
+        request = sanitized_Request(
+            self._LOGIN_URL, urlencode_postdata(login_form))
         login_page = self._download_webpage(
             request, None, 'Logging in as %s' % username)
 
         # Not (yet) logged in
-        m = re.search(r'loginResultJson = \'(?P<json>[^\']+)\';', login_page)
+        m = re.search(r'loginResultJson\s*=\s*\'(?P<json>[^\']+)\';', login_page)
         if m is not None:
             response = m.group('json')
             response_json = json.loads(response)
@@ -64,14 +62,32 @@ class LyndaBaseIE(InfoExtractor):
                     'remember': 'false',
                     'stayPut': 'false',
                 }
-                request = compat_urllib_request.Request(
-                    self._LOGIN_URL, compat_urllib_parse.urlencode(confirm_form))
+                request = sanitized_Request(
+                    self._LOGIN_URL, urlencode_postdata(confirm_form))
                 login_page = self._download_webpage(
                     request, None,
                     'Confirming log in and log out from another device')
 
-        if re.search(self._SUCCESSFUL_LOGIN_REGEX, login_page) is None:
+        if all(not re.search(p, login_page) for p in ('isLoggedIn\s*:\s*true', r'logout\.aspx', r'>Log out<')):
+            if 'login error' in login_page:
+                mobj = re.search(
+                    r'(?s)<h1[^>]+class="topmost">(?P<title>[^<]+)</h1>\s*<div>(?P<description>.+?)</div>',
+                    login_page)
+                if mobj:
+                    raise ExtractorError(
+                        'lynda returned error: %s - %s'
+                        % (mobj.group('title'), clean_html(mobj.group('description'))),
+                        expected=True)
             raise ExtractorError('Unable to log in')
+
+    def _logout(self):
+        username, _ = self._get_login_info()
+        if username is None:
+            return
+
+        self._download_webpage(
+            'http://www.lynda.com/ajax/logout.aspx', None,
+            'Logging out', 'Unable to log out', fatal=False)
 
 
 class LyndaIE(LyndaBaseIE):
@@ -99,52 +115,47 @@ class LyndaIE(LyndaBaseIE):
     def _real_extract(self, url):
         video_id = self._match_id(url)
 
-        page = self._download_webpage(
+        video = self._download_json(
             'http://www.lynda.com/ajax/player?videoId=%s&type=video' % video_id,
             video_id, 'Downloading video JSON')
-        video_json = json.loads(page)
 
-        if 'Status' in video_json:
+        if 'Status' in video:
             raise ExtractorError(
-                'lynda returned error: %s' % video_json['Message'], expected=True)
+                'lynda returned error: %s' % video['Message'], expected=True)
 
-        if video_json['HasAccess'] is False:
-            raise ExtractorError(
-                'Video %s is only available for members. '
-                % video_id + self._ACCOUNT_CREDENTIALS_HINT, expected=True)
+        if video.get('HasAccess') is False:
+            self.raise_login_required('Video %s is only available for members' % video_id)
 
-        video_id = compat_str(video_json['ID'])
-        duration = video_json['DurationInSeconds']
-        title = video_json['Title']
+        video_id = compat_str(video.get('ID') or video_id)
+        duration = int_or_none(video.get('DurationInSeconds'))
+        title = video['Title']
 
         formats = []
 
-        fmts = video_json.get('Formats')
+        fmts = video.get('Formats')
         if fmts:
-            formats.extend([
-                {
-                    'url': fmt['Url'],
-                    'ext': fmt['Extension'],
-                    'width': fmt['Width'],
-                    'height': fmt['Height'],
-                    'filesize': fmt['FileSize'],
-                    'format_id': str(fmt['Resolution'])
-                } for fmt in fmts])
+            formats.extend([{
+                'url': f['Url'],
+                'ext': f.get('Extension'),
+                'width': int_or_none(f.get('Width')),
+                'height': int_or_none(f.get('Height')),
+                'filesize': int_or_none(f.get('FileSize')),
+                'format_id': compat_str(f.get('Resolution')) if f.get('Resolution') else None,
+            } for f in fmts if f.get('Url')])
 
-        prioritized_streams = video_json.get('PrioritizedStreams')
+        prioritized_streams = video.get('PrioritizedStreams')
         if prioritized_streams:
-            formats.extend([
-                {
+            for prioritized_stream_id, prioritized_stream in prioritized_streams.items():
+                formats.extend([{
                     'url': video_url,
                     'width': int_or_none(format_id),
-                    'format_id': format_id,
-                } for format_id, video_url in prioritized_streams['0'].items()
-            ])
+                    'format_id': '%s-%s' % (prioritized_stream_id, format_id),
+                } for format_id, video_url in prioritized_stream.items()])
 
         self._check_formats(formats, video_id)
         self._sort_formats(formats)
 
-        subtitles = self.extract_subtitles(video_id, page)
+        subtitles = self.extract_subtitles(video_id)
 
         return {
             'id': video_id,
@@ -175,7 +186,7 @@ class LyndaIE(LyndaBaseIE):
         if srt:
             return srt
 
-    def _get_subtitles(self, video_id, webpage):
+    def _get_subtitles(self, video_id):
         url = 'http://www.lynda.com/ajax/player?videoId=%s&type=transcript' % video_id
         subs = self._download_json(url, None, False)
         if subs:
@@ -197,39 +208,43 @@ class LyndaCourseIE(LyndaBaseIE):
         course_path = mobj.group('coursepath')
         course_id = mobj.group('courseid')
 
-        page = self._download_webpage(
+        course = self._download_json(
             'http://www.lynda.com/ajax/player?courseId=%s&type=course' % course_id,
             course_id, 'Downloading course JSON')
-        course_json = json.loads(page)
 
-        if 'Status' in course_json and course_json['Status'] == 'NotFound':
+        self._logout()
+
+        if course.get('Status') == 'NotFound':
             raise ExtractorError(
                 'Course %s does not exist' % course_id, expected=True)
 
         unaccessible_videos = 0
-        videos = []
+        entries = []
 
         # Might want to extract videos right here from video['Formats'] as it seems 'Formats' is not provided
         # by single video API anymore
 
-        for chapter in course_json['Chapters']:
-            for video in chapter['Videos']:
-                if video['HasAccess'] is False:
+        for chapter in course['Chapters']:
+            for video in chapter.get('Videos', []):
+                if video.get('HasAccess') is False:
                     unaccessible_videos += 1
                     continue
-                videos.append(video['ID'])
+                video_id = video.get('ID')
+                if video_id:
+                    entries.append({
+                        '_type': 'url_transparent',
+                        'url': 'http://www.lynda.com/%s/%s-4.html' % (course_path, video_id),
+                        'ie_key': LyndaIE.ie_key(),
+                        'chapter': chapter.get('Title'),
+                        'chapter_number': int_or_none(chapter.get('ChapterIndex')),
+                        'chapter_id': compat_str(chapter.get('ID')),
+                    })
 
         if unaccessible_videos > 0:
             self._downloader.report_warning(
                 '%s videos are only available for members (or paid members) and will not be downloaded. '
                 % unaccessible_videos + self._ACCOUNT_CREDENTIALS_HINT)
 
-        entries = [
-            self.url_result(
-                'http://www.lynda.com/%s/%s-4.html' % (course_path, video_id),
-                'Lynda')
-            for video_id in videos]
-
-        course_title = course_json['Title']
+        course_title = course.get('Title')
 
         return self.playlist_result(entries, course_id, course_title)

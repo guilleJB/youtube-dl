@@ -5,7 +5,7 @@ import json
 
 from .common import InfoExtractor
 from ..compat import (
-    compat_urllib_parse,
+    compat_urllib_parse_unquote,
     compat_urlparse,
 )
 from ..utils import (
@@ -14,7 +14,7 @@ from ..utils import (
 
 
 class GameSpotIE(InfoExtractor):
-    _VALID_URL = r'http://(?:www\.)?gamespot\.com/.*-(?P<id>\d+)/?'
+    _VALID_URL = r'https?://(?:www\.)?gamespot\.com/.*-(?P<id>\d+)/?'
     _TESTS = [{
         'url': 'http://www.gamespot.com/videos/arma-3-community-guide-sitrep-i/2300-6410818/',
         'md5': 'b2a30deaa8654fcccd43713a6b6a4825',
@@ -75,7 +75,7 @@ class GameSpotIE(InfoExtractor):
         return {
             'id': data_video['guid'],
             'display_id': page_id,
-            'title': compat_urllib_parse.unquote(data_video['title']),
+            'title': compat_urllib_parse_unquote(data_video['title']),
             'formats': formats,
             'description': self._html_search_meta('description', webpage),
             'thumbnail': self._og_search_thumbnail(webpage),

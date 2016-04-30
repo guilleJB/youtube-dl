@@ -35,7 +35,12 @@ class EmbedThumbnailPP(FFmpegPostProcessor):
 
         thumbnail_filename = info['thumbnails'][-1]['filename']
 
-        if info['ext'] == 'mp3':
+        if not os.path.exists(encodeFilename(thumbnail_filename)):
+            self._downloader.report_warning(
+                'Skipping embedding the thumbnail because the file is missing.')
+            return [], info
+
+        if info['ext'] in ('mp3', 'mkv'):
             options = [
                 '-c', 'copy', '-map', '0', '-map', '1',
                 '-metadata:s:v', 'title="Album cover"', '-metadata:s:v', 'comment="Cover (Front)"']

@@ -4,10 +4,8 @@ from __future__ import unicode_literals
 import re
 
 from .common import InfoExtractor
-from ..compat import (
-    compat_urllib_request,
-    compat_urllib_parse,
-)
+from ..compat import compat_urllib_parse_urlencode
+from ..utils import sanitized_Request
 
 
 class SinaIE(InfoExtractor):
@@ -41,7 +39,7 @@ class SinaIE(InfoExtractor):
     ]
 
     def _extract_video(self, video_id):
-        data = compat_urllib_parse.urlencode({'vid': video_id})
+        data = compat_urllib_parse_urlencode({'vid': video_id})
         url_doc = self._download_xml('http://v.iask.com/v_play.php?%s' % data,
                                      video_id, 'Downloading video url')
         image_page = self._download_webpage(
@@ -61,7 +59,7 @@ class SinaIE(InfoExtractor):
         if mobj.group('token') is not None:
             # The video id is in the redirected url
             self.to_screen('Getting video id')
-            request = compat_urllib_request.Request(url)
+            request = sanitized_Request(url)
             request.get_method = lambda: 'HEAD'
             (_, urlh) = self._download_webpage_handle(request, 'NA', False)
             return self._real_extract(urlh.geturl())

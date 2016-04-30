@@ -6,7 +6,8 @@ from ..utils import parse_iso8601
 
 
 class NextMediaIE(InfoExtractor):
-    _VALID_URL = r'http://hk.apple.nextmedia.com/[^/]+/[^/]+/(?P<date>\d+)/(?P<id>\d+)'
+    IE_DESC = '蘋果日報'
+    _VALID_URL = r'https?://hk.apple.nextmedia.com/[^/]+/[^/]+/(?P<date>\d+)/(?P<id>\d+)'
     _TESTS = [{
         'url': 'http://hk.apple.nextmedia.com/realtime/news/20141108/53109199',
         'md5': 'dff9fad7009311c421176d1ac90bfe4f',
@@ -66,7 +67,8 @@ class NextMediaIE(InfoExtractor):
 
 
 class NextMediaActionNewsIE(NextMediaIE):
-    _VALID_URL = r'http://hk.dv.nextmedia.com/actionnews/[^/]+/(?P<date>\d+)/(?P<id>\d+)/\d+'
+    IE_DESC = '蘋果日報 - 動新聞'
+    _VALID_URL = r'https?://hk.dv.nextmedia.com/actionnews/[^/]+/(?P<date>\d+)/(?P<id>\d+)/\d+'
     _TESTS = [{
         'url': 'http://hk.dv.nextmedia.com/actionnews/hit/20150121/19009428/20061460',
         'md5': '05fce8ffeed7a5e00665d4b7cf0f9201',
@@ -90,7 +92,8 @@ class NextMediaActionNewsIE(NextMediaIE):
 
 
 class AppleDailyIE(NextMediaIE):
-    _VALID_URL = r'http://(www|ent).appledaily.com.tw/(?:animation|appledaily|enews|realtimenews)/[^/]+/[^/]+/(?P<date>\d+)/(?P<id>\d+)(/.*)?'
+    IE_DESC = '臺灣蘋果日報'
+    _VALID_URL = r'https?://(www|ent).appledaily.com.tw/(?:animation|appledaily|enews|realtimenews)/[^/]+/[^/]+/(?P<date>\d+)/(?P<id>\d+)(/.*)?'
     _TESTS = [{
         'url': 'http://ent.appledaily.com.tw/enews/article/entertainment/20150128/36354694',
         'md5': 'a843ab23d150977cc55ef94f1e2c1e4d',
@@ -123,7 +126,8 @@ class AppleDailyIE(NextMediaIE):
             'thumbnail': 're:^https?://.*\.jpg$',
             'description': 'md5:23c0aac567dc08c9c16a3161a2c2e3cd',
             'upload_date': '20150128',
-        }
+        },
+        'skip': 'redirect to http://www.appledaily.com.tw/animation/',
     }, {
         # No thumbnail
         'url': 'http://www.appledaily.com.tw/animation/realtimenews/new/20150128/5003673/',
@@ -137,10 +141,19 @@ class AppleDailyIE(NextMediaIE):
         },
         'expected_warnings': [
             'video thumbnail',
-        ]
+        ],
+        'skip': 'redirect to http://www.appledaily.com.tw/animation/',
     }, {
         'url': 'http://www.appledaily.com.tw/appledaily/article/supplement/20140417/35770334/',
-        'only_matching': True,
+        'md5': 'eaa20e6b9df418c912d7f5dec2ba734d',
+        'info_dict': {
+            'id': '35770334',
+            'ext': 'mp4',
+            'title': '咖啡占卜測 XU裝熟指數',
+            'thumbnail': 're:^https?://.*\.jpg$',
+            'description': 'md5:7b859991a6a4fedbdf3dd3b66545c748',
+            'upload_date': '20140417',
+        },
     }]
 
     _URL_PATTERN = r'\{url: \'(.+)\'\}'

@@ -9,7 +9,6 @@ import codecs
 import io
 import os
 import random
-import shlex
 import sys
 
 
@@ -20,6 +19,7 @@ from .compat import (
     compat_expanduser,
     compat_getpass,
     compat_print,
+    compat_shlex_split,
     workaround_optparse_bug9161,
 )
 from .utils import (
@@ -144,14 +144,20 @@ def _real_main(argv=None):
         if numeric_limit is None:
             parser.error('invalid max_filesize specified')
         opts.max_filesize = numeric_limit
-    if opts.retries is not None:
-        if opts.retries in ('inf', 'infinite'):
-            opts_retries = float('inf')
+
+    def parse_retries(retries):
+        if retries in ('inf', 'infinite'):
+            parsed_retries = float('inf')
         else:
             try:
-                opts_retries = int(opts.retries)
+                parsed_retries = int(retries)
             except (TypeError, ValueError):
                 parser.error('invalid retry count specified')
+        return parsed_retries
+    if opts.retries is not None:
+        opts.retries = parse_retries(opts.retries)
+    if opts.fragment_retries is not None:
+        opts.fragment_retries = parse_retries(opts.fragment_retries)
     if opts.buffersize is not None:
         numeric_buffersize = FileDownloader.parse_bytes(opts.buffersize)
         if numeric_buffersize is None:
@@ -169,7 +175,7 @@ def _real_main(argv=None):
         if not opts.audioquality.isdigit():
             parser.error('invalid audio quality specified')
     if opts.recodevideo is not None:
-        if opts.recodevideo not in ['mp4', 'flv', 'webm', 'ogg', 'mkv']:
+        if opts.recodevideo not in ['mp4', 'flv', 'webm', 'ogg', 'mkv', 'avi']:
             parser.error('invalid video recode format specified')
     if opts.convertsubtitles is not None:
         if opts.convertsubtitles not in ['srt', 'vtt', 'ass']:
@@ -262,7 +268,10 @@ def _real_main(argv=None):
             parser.error('setting filesize xattr requested but python-xattr is not available')
     external_downloader_args = None
     if opts.external_downloader_args:
-        external_downloader_args = shlex.split(opts.external_downloader_args)
+        external_downloader_args = compat_shlex_split(opts.external_downloader_args)
+    postprocessor_args = None
+    if opts.postprocessor_args:
+        postprocessor_args = compat_shlex_split(opts.postprocessor_args)
     match_filter = (
         None if opts.match_filter is None
         else match_filter_func(opts.match_filter))
@@ -293,9 +302,11 @@ def _real_main(argv=None):
         'autonumber_size': opts.autonumber_size,
         'restrictfilenames': opts.restrictfilenames,
         'ignoreerrors': opts.ignoreerrors,
+        'force_generic_extractor': opts.force_generic_extractor,
         'ratelimit': opts.ratelimit,
         'nooverwrites': opts.nooverwrites,
-        'retries': opts_retries,
+        'retries': opts.retries,
+        'fragment_retries': opts.fragment_retries,
         'buffersize': opts.buffersize,
         'noresizebuffer': opts.noresizebuffer,
         'continuedl': opts.continue_dl,
@@ -351,6 +362,7 @@ def _real_main(argv=None):
         'youtube_include_dash_manifest': opts.youtube_include_dash_manifest,
         'encoding': opts.encoding,
         'extract_flat': opts.extract_flat,
+        'mark_watched': opts.mark_watched,
         'merge_output_format': opts.merge_output_format,
         'postprocessors': postprocessors,
         'fixup': opts.fixup,
@@ -365,14 +377,16 @@ def _real_main(argv=None):
         'no_color': opts.no_color,
         'ffmpeg_location': opts.ffmpeg_location,
         'hls_prefer_native': opts.hls_prefer_native,
+        'hls_use_mpegts': opts.hls_use_mpegts,
         'external_downloader_args': external_downloader_args,
+        'postprocessor_args': postprocessor_args,
         'cn_verification_proxy': opts.cn_verification_proxy,
     }
 
     with YoutubeDL(ydl_opts) as ydl:
         # Update version
         if opts.update_self:
-            update_self(ydl.to_screen, opts.verbose)
+            update_self(ydl.to_screen, opts.verbose, ydl._opener)
 
         # Remove cache dir
         if opts.rm_cachedir:

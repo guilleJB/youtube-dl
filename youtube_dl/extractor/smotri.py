@@ -7,14 +7,12 @@ import hashlib
 import uuid
 
 from .common import InfoExtractor
-from ..compat import (
-    compat_urllib_parse,
-    compat_urllib_request,
-)
 from ..utils import (
     ExtractorError,
     int_or_none,
+    sanitized_Request,
     unified_strdate,
+    urlencode_postdata,
 )
 
 
@@ -53,7 +51,7 @@ class SmotriIE(InfoExtractor):
                 'thumbnail': 'http://frame4.loadup.ru/03/ed/57591.2.3.jpg',
             },
         },
-        # video-password
+        # video-password, not approved by moderator
         {
             'url': 'http://smotri.com/video/view/?id=v1390466a13c',
             'md5': 'f6331cef33cad65a0815ee482a54440b',
@@ -71,7 +69,24 @@ class SmotriIE(InfoExtractor):
             },
             'skip': 'Video is not approved by moderator',
         },
-        # age limit + video-password
+        # video-password
+        {
+            'url': 'http://smotri.com/video/view/?id=v6984858774#',
+            'md5': 'f11e01d13ac676370fc3b95b9bda11b0',
+            'info_dict': {
+                'id': 'v6984858774',
+                'ext': 'mp4',
+                'title': 'Дача Солженицина ПАРОЛЬ 223322',
+                'uploader': 'psavari1',
+                'uploader_id': 'psavari1',
+                'upload_date': '20081103',
+                'thumbnail': 're:^https?://.*\.jpg$',
+            },
+            'params': {
+                'videopassword': '223322',
+            },
+        },
+        # age limit + video-password, not approved by moderator
         {
             'url': 'http://smotri.com/video/view/?id=v15408898bcf',
             'md5': '91e909c9f0521adf5ee86fbe073aad70',
@@ -90,19 +105,22 @@ class SmotriIE(InfoExtractor):
             },
             'skip': 'Video is not approved by moderator',
         },
-        # not approved by moderator, but available
+        # age limit + video-password
         {
-            'url': 'http://smotri.com/video/view/?id=v28888533b73',
-            'md5': 'f44bc7adac90af518ef1ecf04893bb34',
+            'url': 'http://smotri.com/video/view/?id=v7780025814',
+            'md5': 'b4599b068422559374a59300c5337d72',
             'info_dict': {
-                'id': 'v28888533b73',
+                'id': 'v7780025814',
                 'ext': 'mp4',
-                'title': 'Russian Spies Killed By ISIL Child Soldier',
-                'uploader': 'Mopeder',
-                'uploader_id': 'mopeder',
-                'duration': 71,
-                'thumbnail': 'http://frame9.loadup.ru/d7/32/2888853.2.3.jpg',
-                'upload_date': '20150114',
+                'title': 'Sexy Beach (пароль 123)',
+                'uploader': 'вАся',
+                'uploader_id': 'asya_prosto',
+                'upload_date': '20081218',
+                'thumbnail': 're:^https?://.*\.jpg$',
+                'age_limit': 18,
+            },
+            'params': {
+                'videopassword': '123'
             },
         },
         # swf player
@@ -152,8 +170,12 @@ class SmotriIE(InfoExtractor):
             'getvideoinfo': '1',
         }
 
-        request = compat_urllib_request.Request(
-            'http://smotri.com/video/view/url/bot/', compat_urllib_parse.urlencode(video_form))
+        video_password = self._downloader.params.get('videopassword')
+        if video_password:
+            video_form['pass'] = hashlib.md5(video_password.encode('utf-8')).hexdigest()
+
+        request = sanitized_Request(
+            'http://smotri.com/video/view/url/bot/', urlencode_postdata(video_form))
         request.add_header('Content-Type', 'application/x-www-form-urlencoded')
 
         video = self._download_json(request, video_id, 'Downloading video JSON')
@@ -161,12 +183,17 @@ class SmotriIE(InfoExtractor):
         video_url = video.get('_vidURL') or video.get('_vidURL_mp4')
 
         if not video_url:
-            if video.get('_moderate_no') or not video.get('moderated'):
+            if video.get('_moderate_no'):
                 raise ExtractorError(
                     'Video %s has not been approved by moderator' % video_id, expected=True)
 
             if video.get('error'):
                 raise ExtractorError('Video %s does not exist' % video_id, expected=True)
+
+            if video.get('_pass_protected') == 1:
+                msg = ('Invalid video password' if video_password
+                       else 'This video is protected by a password, use the --video-password option')
+                raise ExtractorError(msg, expected=True)
 
         title = video['title']
         thumbnail = video['_imgURL']
@@ -301,10 +328,7 @@ class SmotriBroadcastIE(InfoExtractor):
 
             (username, password) = self._get_login_info()
             if username is None:
-                raise ExtractorError(
-                    'Erotic broadcasts allowed only for registered users, '
-                    'use --username and --password options to provide account credentials.',
-                    expected=True)
+                self.raise_login_required('Erotic broadcasts allowed only for registered users')
 
             login_form = {
                 'login-hint53': '1',
@@ -313,8 +337,8 @@ class SmotriBroadcastIE(InfoExtractor):
                 'password': password,
             }
 
-            request = compat_urllib_request.Request(
-                broadcast_url + '/?no_redirect=1', compat_urllib_parse.urlencode(login_form))
+            request = sanitized_Request(
+                broadcast_url + '/?no_redirect=1', urlencode_postdata(login_form))
             request.add_header('Content-Type', 'application/x-www-form-urlencoded')
             broadcast_page = self._download_webpage(
                 request, broadcast_id, 'Logging in and confirming age')
@@ -332,7 +356,7 @@ class SmotriBroadcastIE(InfoExtractor):
 
         url = 'http://smotri.com/broadcast/view/url/?ticket=%s' % ticket
 
-        broadcast_password = self._downloader.params.get('videopassword', None)
+        broadcast_password = self._downloader.params.get('videopassword')
         if broadcast_password:
             url += '&pass=%s' % hashlib.md5(broadcast_password.encode('utf-8')).hexdigest()
 

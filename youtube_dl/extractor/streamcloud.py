@@ -4,9 +4,9 @@ from __future__ import unicode_literals
 import re
 
 from .common import InfoExtractor
-from ..compat import (
-    compat_urllib_parse,
-    compat_urllib_request,
+from ..utils import (
+    sanitized_Request,
+    urlencode_postdata,
 )
 
 
@@ -37,13 +37,13 @@ class StreamcloudIE(InfoExtractor):
             (?:id="[^"]+"\s+)?
             value="([^"]*)"
             ''', orig_webpage)
-        post = compat_urllib_parse.urlencode(fields)
+        post = urlencode_postdata(fields)
 
         self._sleep(12, video_id)
         headers = {
             b'Content-Type': b'application/x-www-form-urlencoded',
         }
-        req = compat_urllib_request.Request(url, post, headers)
+        req = sanitized_Request(url, post, headers)
 
         webpage = self._download_webpage(
             req, video_id, note='Downloading video page ...')

@@ -12,7 +12,7 @@ from ..utils import (
 
 
 class PornHdIE(InfoExtractor):
-    _VALID_URL = r'http://(?:www\.)?pornhd\.com/(?:[a-z]{2,4}/)?videos/(?P<id>\d+)(?:/(?P<display_id>.+))?'
+    _VALID_URL = r'https?://(?:www\.)?pornhd\.com/(?:[a-z]{2,4}/)?videos/(?P<id>\d+)(?:/(?P<display_id>.+))?'
     _TEST = {
         'url': 'http://www.pornhd.com/videos/1962/sierra-day-gets-his-cum-all-over-herself-hd-porn-video',
         'md5': '956b8ca569f7f4d8ec563e2c41598441',
@@ -36,7 +36,8 @@ class PornHdIE(InfoExtractor):
         webpage = self._download_webpage(url, display_id or video_id)
 
         title = self._html_search_regex(
-            r'<title>(.+) porn HD.+?</title>', webpage, 'title')
+            [r'<span[^>]+class=["\']video-name["\'][^>]*>([^<]+)',
+             r'<title>(.+?) - .*?[Pp]ornHD.*?</title>'], webpage, 'title')
         description = self._html_search_regex(
             r'<div class="description">([^<]+)</div>', webpage, 'description', fatal=False)
         view_count = int_or_none(self._html_search_regex(
